@@ -1,6 +1,6 @@
 name: YouTube Video Editor
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       youtube_url:
@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Install FFmpeg
         run: |
           sudo apt-get update
@@ -33,7 +32,7 @@ jobs:
         run: |
           python3 -m pip install --upgrade yt-dlp
 
-      - name: Download selected section
+      - name: Download and cut video
         env:
           VIDEO_URL: ${{ inputs.youtube_url }}
           START_TIME: ${{ inputs.start_time }}
@@ -47,7 +46,7 @@ jobs:
             -o "output.%(ext)s" \
             "$VIDEO_URL"
 
-      - name: Check output
+      - name: Check video
         run: |
           ls -lh output.mp4
           ffprobe -v error \
@@ -55,7 +54,7 @@ jobs:
             -of default=noprint_wrappers=1 \
             output.mp4
 
-      - name: Upload edited video as artifact
+      - name: Save edited video
         uses: actions/upload-artifact@v4
         with:
           name: edited-video
