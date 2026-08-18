@@ -1,0 +1,63 @@
+name: YouTube Video Editor
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_url:
+        description: "YouTube video URL"
+        required: true
+        type: string
+
+      start_time:
+        description: "Start time (HH:MM:SS)"
+        required: true
+        type: string
+
+      end_time:
+        description: "End time (HH:MM:SS)"
+        required: true
+        type: string
+
+jobs:
+  edit-video:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install yt-dlp
+        run: |
+          python3 -m pip install --upgrade yt-dlp
+
+      - name: Download selected section
+        env:
+          VIDEO_URL: ${{ inputs.youtube_url }}
+          START_TIME: ${{ inputs.start_time }}
+          END_TIME: ${{ inputs.end_time }}
+        run: |
+          yt-dlp \
+            --download-sections "*${START_TIME}-${END_TIME}" \
+            --force-keyframes-at-cuts \
+            -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+            --merge-output-format mp4 \
+            -o "output.%(ext)s" \
+            "$VIDEO_URL"
+
+      - name: Check output
+        run: |
+          ls -lh output.mp4
+          ffprobe -v error \
+            -show_entries format=duration \
+            -of default=noprint_wrappers=1 \
+            output.mp4
+
+      - name: Upload edited video as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: edited-video
+          path: output.mp4
+          retention-days: 1
