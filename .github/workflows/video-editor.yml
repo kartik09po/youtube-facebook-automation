@@ -23,10 +23,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Install Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+
       - name: Install FFmpeg
         run: |
           sudo apt-get update
@@ -36,6 +38,13 @@ jobs:
         run: |
           python3 -m pip install -U "yt-dlp[default]"
 
+      - name: Create YouTube cookies file
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          printf '%s' "$YOUTUBE_COOKIES" > cookies.txt
+          chmod 600 cookies.txt
+
       - name: Download and cut video
         env:
           VIDEO_URL: ${{ inputs.youtube_url }}
@@ -43,6 +52,7 @@ jobs:
           END_TIME: ${{ inputs.end_time }}
         run: |
           yt-dlp \
+            --cookies cookies.txt \
             --download-sections "*${START_TIME}-${END_TIME}" \
             --force-keyframes-at-cuts \
             -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
@@ -64,3 +74,8 @@ jobs:
           name: edited-video
           path: output.mp4
           retention-days: 1
+
+      - name: Remove cookies
+        if: always()
+        run: |
+          rm -f cookies.txt
