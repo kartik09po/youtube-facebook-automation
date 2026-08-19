@@ -24,35 +24,96 @@ jobs:
 
     steps:
 
+      # -----------------------------
+      # 1. Install Deno
+      # -----------------------------
       - name: Install Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
+      # -----------------------------
+      # 2. Install Node.js
+      # -----------------------------
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # -----------------------------
+      # 3. Install FFmpeg
+      # -----------------------------
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      # -----------------------------
+      # 4. Install yt-dlp
+      # -----------------------------
       - name: Install yt-dlp
         run: |
           python3 -m pip install -U "yt-dlp[default]"
+          python3 -m pip install -U bgutil-ytdlp-pot-provider
 
-      - name: Create YouTube cookies file
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+      # -----------------------------
+      # 5. Install PO Token Provider
+      # -----------------------------
+      - name: Setup PO Token Provider
         run: |
-          printf '%s' "$YOUTUBE_COOKIES" > cookies.txt
-          chmod 600 cookies.txt
+          git clone --single-branch \
+            https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
+            bgutil-ytdlp-pot-provider
 
+          cd bgutil-ytdlp-pot-provider/server
+
+          npm ci
+          npx tsc
+
+      # -----------------------------
+      # 6. Start PO Token Server
+      # -----------------------------
+      - name: Start PO Token Server
+        run: |
+          cd bgutil-ytdlp-pot-provider/server
+
+          nohup node build/main.js > /tmp/bgutil-provider.log 2>&1 &
+
+          sleep 5
+
+          echo "PO Token Provider started"
+          cat /tmp/bgutil-provider.log || true
+
+      # -----------------------------
+      # 7. Check yt-dlp + PO Provider
+      # -----------------------------
+      - name: Check yt-dlp setup
+        run: |
+          yt-dlp --version
+
+          echo "Checking PO Token provider..."
+
+          yt-dlp -v \
+            --js-runtimes deno \
+            --remote-components ejs:github \
+            --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            --simulate \
+            "${{ inputs.youtube_url }}" || true
+
+      # -----------------------------
+      # 8. Download and cut video
+      # -----------------------------
       - name: Download and cut video
         env:
           VIDEO_URL: ${{ inputs.youtube_url }}
           START_TIME: ${{ inputs.start_time }}
           END_TIME: ${{ inputs.end_time }}
+
         run: |
           yt-dlp \
-            --cookies cookies.txt \
+            --js-runtimes deno \
+            --remote-components ejs:github \
+            --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
             --download-sections "*${START_TIME}-${END_TIME}" \
             --force-keyframes-at-cuts \
             -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
@@ -60,14 +121,21 @@ jobs:
             -o "output.%(ext)s" \
             "$VIDEO_URL"
 
+      # -----------------------------
+      # 9. Check output
+      # -----------------------------
       - name: Check video
         run: |
           ls -lh output.mp4
+
           ffprobe -v error \
             -show_entries format=duration \
             -of default=noprint_wrappers=1 \
             output.mp4
 
+      # -----------------------------
+      # 10. Save edited video
+      # -----------------------------
       - name: Save edited video
         uses: actions/upload-artifact@v4
         with:
@@ -75,7 +143,11 @@ jobs:
           path: output.mp4
           retention-days: 1
 
-      - name: Remove cookies
-        if: always()
+      # -----------------------------
+      # 11. Show provider log if failed
+      # -----------------------------
+      - name: Show PO Token Provider log
+        if: failure()
         run: |
-          rm -f cookies.txt
+          echo "===== PO TOKEN PROVIDER LOG ====="
+          cat /tmp/bgutil-provider.log || true
